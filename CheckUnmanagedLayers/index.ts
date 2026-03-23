@@ -3,50 +3,68 @@ import { DataverseClient, UnmanagedLayerResult } from "./dataverse-client";
 
 async function run(): Promise<void> {
   try {
-    // Read inputs
-    const authenticationType = tl.getInput("authenticationType", true)!;
-    const dataverseUrl = tl.getInput("dataverseUrl", true)!;
-    const solutionUniqueName = tl.getInput("solutionUniqueName", true)!;
+    // Read the service connection input (same pattern as PowerPlatformExportSolution)
+    const serviceConnectionId = tl.getInput("PowerPlatformSPN", true)!;
+    const solutionUniqueName = tl.getInput("SolutionName", true)!;
     const failOnUnmanagedLayers = tl.getBoolInput("failOnUnmanagedLayers", false) ?? true;
     const outputFormat = tl.getInput("outputFormat", false) ?? "table";
 
-    tl.debug(`Authentication type: ${authenticationType}`);
-    tl.debug(`Dataverse URL: ${dataverseUrl}`);
-    tl.debug(`Solution unique name: ${solutionUniqueName}`);
+    // Resolve environment URL and credentials from the service connection
+    const dataverseUrl = tl.getEndpointUrl(serviceConnectionId, true)!;
+    const tenantId = tl.getEndpointAuthorizationParameter(serviceConnectionId, "tenantId", false)!;
+    const clientId = tl.getEndpointAuthorizationParameter(serviceConnectionId, "applicationId", false)!;
+    const authScheme = tl.getEndpointAuthorizationScheme(serviceConnectionId, false) ?? "ServicePrincipal";
+
+    tl.debug(`Environment URL: ${dataverseUrl}`);
+    tl.debug(`Auth scheme: ${authScheme}`);
+    tl.debug(`Tenant ID: ${tenantId}`);
+    tl.debug(`Client ID: ${clientId}`);
 
     console.log(`##[section]Connecting to Dataverse environment: ${dataverseUrl}`);
 
-    // Acquire access token
     let accessToken: string;
 
-    if (authenticationType === "ServicePrincipal") {
-      const tenantId = tl.getInput("tenantId", true)!;
-      const clientId = tl.getInput("clientId", true)!;
-      const clientSecret = tl.getInput("clientSecret", true)!;
+    if (authScheme === "WorkloadIdentityFederation") {
+      // Federated credential (OIDC) flow — no client secret stored in the service connection
+      console.log(`Authenticating via Workload Identity Federation (service connection: ${serviceConnectionId})`);
 
-      console.log(`Authenticating as service principal (client ID: ${clientId})`);
-      accessToken = await DataverseClient.getTokenWithClientCredentials(
+      const oidcRequestUri = tl.getVariable("System.OidcRequestUri");
+      const systemAccessToken = tl.getVariable("System.AccessToken");
+
+      if (!oidcRequestUri || !systemAccessToken) {
+        throw new Error(
+          "System.OidcRequestUri or System.AccessToken is not available. " +
+            "Ensure 'Allow scripts to access the OAuth token' is enabled for this pipeline job."
+        );
+      }
+
+      const oidcToken = await DataverseClient.getOidcTokenFromAzureDevOps(
+        serviceConnectionId,
+        oidcRequestUri,
+        systemAccessToken
+      );
+
+      accessToken = await DataverseClient.getTokenWithFederatedCredential(
         tenantId,
         clientId,
-        clientSecret,
+        oidcToken,
         dataverseUrl
       );
     } else {
-      const username = tl.getInput("username", true)!;
-      tl.getInput("password", true); // validate it exists
-      const password = tl.getInput("password", true)!;
+      // ServicePrincipal (client secret) flow
+      console.log(`Authenticating via Service Principal (client ID: ${clientId})`);
+      const clientSecret = tl.getEndpointAuthorizationParameter(serviceConnectionId, "clientSecret", false)!;
 
-      console.log(`Authenticating as user: ${username}`);
-      accessToken = await DataverseClient.getTokenWithUsernamePassword(
-        username,
-        password,
+      accessToken = await DataverseClient.getTokenWithClientSecret(
+        tenantId,
+        clientId,
+        clientSecret,
         dataverseUrl
       );
     }
 
     console.log("Authentication successful.");
 
-    // Initialize Dataverse client
     const client = new DataverseClient(dataverseUrl, accessToken);
 
     // Validate the solution exists
@@ -57,7 +75,7 @@ async function run(): Promise<void> {
       tl.setResult(
         tl.TaskResult.Failed,
         `Solution '${solutionUniqueName}' was not found in the environment '${dataverseUrl}'. ` +
-          "Please verify the solution unique name and ensure the authenticated user has access to it."
+          "Please verify the solution unique name and ensure the service principal has access to it."
       );
       return;
     }
@@ -68,14 +86,14 @@ async function run(): Promise<void> {
     console.log(`\n##[section]Checking for unmanaged layers on solution components...`);
     const unmanagedLayers = await client.getUnmanagedLayersForSolution(solutionUniqueName);
 
-    // Output results
+    // Set output variable for downstream tasks
+    tl.setVariable("UnmanagedLayerCount", String(unmanagedLayers.length), false, true);
+
     if (unmanagedLayers.length === 0) {
       console.log(
         `\n##[section]Result: No unmanaged layers detected for solution '${solutionUniqueName}'.`
       );
-      console.log(
-        "All solution components are clean. No unmanaged customizations were found on top of any component."
-      );
+      console.log("All solution components are clean — no unmanaged customizations found.");
       tl.setResult(tl.TaskResult.Succeeded, "No unmanaged layers detected.");
       return;
     }
@@ -91,9 +109,6 @@ async function run(): Promise<void> {
       outputAsTable(unmanagedLayers);
     }
 
-    // Set pipeline variable with count for downstream tasks
-    tl.setVariable("UnmanagedLayerCount", String(unmanagedLayers.length));
-
     if (failOnUnmanagedLayers) {
       tl.setResult(
         tl.TaskResult.Failed,
@@ -102,9 +117,13 @@ async function run(): Promise<void> {
       );
     } else {
       tl.warning(
-        `${unmanagedLayers.length} component(s) with unmanaged layers detected. Pipeline continues because 'Fail on unmanaged layers' is disabled.`
+        `${unmanagedLayers.length} component(s) with unmanaged layers detected. ` +
+          "Pipeline continues because 'Fail on unmanaged layers' is disabled."
       );
-      tl.setResult(tl.TaskResult.Succeeded, `${unmanagedLayers.length} unmanaged layer(s) found (non-blocking).`);
+      tl.setResult(
+        tl.TaskResult.Succeeded,
+        `${unmanagedLayers.length} unmanaged layer(s) found (non-blocking).`
+      );
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

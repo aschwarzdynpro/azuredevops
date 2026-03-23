@@ -20,16 +20,13 @@ Unmanaged layers (visible as the `Active` layer in the solution layer inspector)
 
 | Input | Required | Description |
 |---|---|---|
-| `authenticationType` | Yes | `ServicePrincipal` or `UsernamePassword` |
-| `dataverseUrl` | Yes | Environment URL, e.g. `https://yourorg.crm.dynamics.com` |
-| `tenantId` | Conditional | Azure AD Tenant ID (Service Principal only) |
-| `clientId` | Conditional | Application (Client) ID (Service Principal only) |
-| `clientSecret` | Conditional | Client secret (Service Principal only) |
-| `username` | Conditional | User UPN (Username/Password only) |
-| `password` | Conditional | User password (Username/Password only) |
-| `solutionUniqueName` | Yes | Unique name of the managed solution to inspect |
+| `authenticationType` | Yes | Must be `PowerPlatformSPN` |
+| `PowerPlatformSPN` | Yes | Name of the **Power Platform service connection** pointing to the target environment |
+| `SolutionName` | Yes | Unique name of the managed solution to inspect |
 | `failOnUnmanagedLayers` | No | Fail the task when unmanaged layers are found (default: `true`) |
 | `outputFormat` | No | `table` (default) or `json` |
+
+The task uses the same **Power Platform service connection** (`connectedService:PowerPlatform`) as the official Microsoft Power Platform Build Tools tasks (`PowerPlatformExportSolution`, `PowerPlatformImportSolution`, etc.). Both **Service Principal / client secret** and **Workload Identity Federation** connection schemes are supported.
 
 ## Output Variables
 
@@ -45,12 +42,9 @@ Unmanaged layers (visible as the `Active` layer in the solution layer inspector)
 - task: CheckUnmanagedLayers@1
   displayName: 'Check for Unmanaged Layers'
   inputs:
-    authenticationType: 'ServicePrincipal'
-    dataverseUrl: 'https://yourorg.crm.dynamics.com'
-    tenantId: '$(TENANT_ID)'
-    clientId: '$(CLIENT_ID)'
-    clientSecret: '$(CLIENT_SECRET)'
-    solutionUniqueName: 'YourSolutionUniqueName'
+    authenticationType: 'PowerPlatformSPN'
+    PowerPlatformSPN: '${{ parameters.SourceEnvironment }}'
+    SolutionName: '${{ parameters.SolutionName }}'
     failOnUnmanagedLayers: true
     outputFormat: 'table'
 ```
@@ -61,19 +55,23 @@ See [pipeline-example.yml](./pipeline-example.yml) for a full pipeline configura
 
 ## Prerequisites
 
-### Service Principal Setup
+### Power Platform Service Connection Setup
 
-1. Register an application in **Azure Active Directory**.
-2. Create a **client secret** for the application.
-3. In your Dataverse environment, go to **Settings → Users** and create an **Application User** linked to the registered application.
-4. Assign the Application User a security role with at least read access to the `msdyn_componentlayer` and `solution` tables.
+1. In Azure DevOps, go to **Project Settings → Service Connections → New service connection → Power Platform**.
+2. Enter the **Environment URL** (e.g. `https://yourorg.crm.dynamics.com`), **Tenant ID**, and **Application (Client) ID**.
+3. Choose either:
+   - **Client secret** — enter the secret value.
+   - **Workload Identity Federation** — configure federated credentials in your Entra ID app registration.
+4. In your Dataverse environment, create an **Application User** for the registered app and assign it a security role.
 
-### Required Permissions
+> When using **Workload Identity Federation**, enable **"Allow scripts to access the OAuth token"** in the pipeline job settings so that `System.AccessToken` is available.
 
-The authenticated identity requires:
-- Read access to `solutions`
-- Read access to `solutioncomponents`
-- Read access to `msdyn_componentlayers`
+### Required Dataverse Permissions
+
+The Application User needs at least **read** access to:
+- `solution` table
+- `solutioncomponent` table
+- `msdyn_componentlayer` table
 
 ---
 

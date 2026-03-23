@@ -16,13 +16,8 @@
     "Minor": 0,
     "Patch": 0
   },
-  "instanceNameFormat": "Check Unmanaged Layers: $(solutionUniqueName)",
+  "instanceNameFormat": "Check Unmanaged Layers: $(SolutionName)",
   "groups": [
-    {
-      "name": "connection",
-      "displayName": "Dataverse Connection",
-      "isExpanded": true
-    },
     {
       "name": "solution",
       "displayName": "Solution",
@@ -38,79 +33,24 @@
     {
       "name": "authenticationType",
       "type": "pickList",
-      "label": "Authentication Type",
-      "defaultValue": "ServicePrincipal",
-      "groupName": "connection",
+      "label": "Authentication type",
+      "defaultValue": "PowerPlatformSPN",
       "required": true,
-      "helpMarkDown": "Select the authentication method for connecting to Dataverse.",
+      "helpMarkDown": "Select the authentication type.",
       "options": {
-        "ServicePrincipal": "Service Principal (Client ID / Client Secret)",
-        "UsernamePassword": "Username / Password"
+        "PowerPlatformSPN": "Service Principal/client secret (support for MFA)"
       }
     },
     {
-      "name": "dataverseUrl",
-      "type": "string",
-      "label": "Dataverse Environment URL",
-      "defaultValue": "",
-      "groupName": "connection",
+      "name": "PowerPlatformSPN",
+      "type": "connectedService:PowerPlatform",
+      "label": "Service Connection",
       "required": true,
-      "helpMarkDown": "The URL of the Dataverse environment (e.g. https://yourorg.crm.dynamics.com)."
+      "visibleRule": "authenticationType = PowerPlatformSPN",
+      "helpMarkDown": "Select a Power Platform service connection that points to the target Dataverse environment. The service connection must use either a client secret or workload identity federation."
     },
     {
-      "name": "tenantId",
-      "type": "string",
-      "label": "Tenant ID",
-      "defaultValue": "",
-      "groupName": "connection",
-      "required": true,
-      "visibleRule": "authenticationType = ServicePrincipal",
-      "helpMarkDown": "The Azure AD Tenant ID."
-    },
-    {
-      "name": "clientId",
-      "type": "string",
-      "label": "Client ID (Application ID)",
-      "defaultValue": "",
-      "groupName": "connection",
-      "required": true,
-      "visibleRule": "authenticationType = ServicePrincipal",
-      "helpMarkDown": "The Azure AD Application (Client) ID registered for Dataverse access."
-    },
-    {
-      "name": "clientSecret",
-      "type": "string",
-      "label": "Client Secret",
-      "defaultValue": "",
-      "groupName": "connection",
-      "required": true,
-      "visibleRule": "authenticationType = ServicePrincipal",
-      "helpMarkDown": "The client secret for the Azure AD application.",
-      "isConfidential": true
-    },
-    {
-      "name": "username",
-      "type": "string",
-      "label": "Username",
-      "defaultValue": "",
-      "groupName": "connection",
-      "required": true,
-      "visibleRule": "authenticationType = UsernamePassword",
-      "helpMarkDown": "The Dataverse user account (e.g. user@yourorg.onmicrosoft.com)."
-    },
-    {
-      "name": "password",
-      "type": "string",
-      "label": "Password",
-      "defaultValue": "",
-      "groupName": "connection",
-      "required": true,
-      "visibleRule": "authenticationType = UsernamePassword",
-      "helpMarkDown": "The password for the Dataverse user account.",
-      "isConfidential": true
-    },
-    {
-      "name": "solutionUniqueName",
+      "name": "SolutionName",
       "type": "string",
       "label": "Solution Unique Name",
       "defaultValue": "",
@@ -139,6 +79,12 @@
         "table": "Table",
         "json": "JSON"
       }
+    }
+  ],
+  "outputVariables": [
+    {
+      "name": "UnmanagedLayerCount",
+      "description": "The number of solution components that have an unmanaged (Active) layer on top."
     }
   ],
   "execution": {

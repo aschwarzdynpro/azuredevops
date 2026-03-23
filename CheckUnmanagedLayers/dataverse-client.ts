@@ -7,13 +7,6 @@ export interface TokenResponse {
   expires_in: number;
 }
 
-export interface SolutionComponent {
-  objectid: string;
-  componenttype: number;
-  componenttypename: string;
-  solutioncomponentid: string;
-}
-
 export interface ComponentLayer {
   msdyn_componentlayerid: string;
   msdyn_solutionname: string;
@@ -21,7 +14,6 @@ export interface ComponentLayer {
   msdyn_componentid: string;
   msdyn_order: number;
   msdyn_solutioncomponentname: string;
-  "msdyn_solutionname@OData.Community.Display.V1.FormattedValue"?: string;
 }
 
 export interface UnmanagedLayerResult {
@@ -31,98 +23,6 @@ export interface UnmanagedLayerResult {
   solutionName: string;
   layerOrder: number;
 }
-
-// Component type codes from Dataverse metadata
-const COMPONENT_TYPE_NAMES: Record<number, string> = {
-  1: "Entity",
-  2: "Attribute",
-  3: "Relationship",
-  4: "Attribute Picklist Value",
-  5: "Attribute Lookup Value",
-  6: "View Attribute",
-  7: "Localized Label",
-  8: "Relationship Extra Condition",
-  9: "Option Set",
-  10: "Entity Relationship",
-  11: "Entity Relationship Role",
-  12: "Entity Relationship Relationships",
-  13: "Managed Property",
-  14: "Entity Key",
-  16: "Privilege",
-  17: "PrivilegeObjectTypeCode",
-  20: "Role",
-  21: "Role Privilege",
-  22: "Display String",
-  23: "Display String Map",
-  24: "Form",
-  25: "Organization",
-  26: "Saved Query",
-  29: "Workflow",
-  31: "Report",
-  32: "Report Entity",
-  33: "Report Category",
-  34: "Report Visibility",
-  35: "Attachment",
-  36: "Email Template",
-  37: "Contract Template",
-  38: "KB Article Template",
-  39: "Mail Merge Template",
-  44: "Duplicate Rule",
-  45: "Duplicate Rule Condition",
-  46: "Entity Map",
-  47: "Attribute Map",
-  48: "Ribbon Command",
-  49: "Ribbon Context Group",
-  50: "Ribbon Customization",
-  52: "Ribbon Rule",
-  53: "Ribbon Tab To Command Map",
-  55: "Ribbon Diff",
-  59: "Saved Query Visualization",
-  60: "System Form",
-  61: "Web Resource",
-  62: "Site Map",
-  63: "Connection Role",
-  64: "Complex Control",
-  65: "Hierarchy Rule",
-  66: "Custom Control",
-  68: "Custom Control Default Config",
-  70: "Field Security Profile",
-  71: "Field Permission",
-  90: "Plugin Type",
-  91: "Plugin Assembly",
-  92: "SDK Message Processing Step",
-  93: "SDK Message Processing Step Image",
-  95: "Service Endpoint",
-  150: "Routing Rule",
-  151: "Routing Rule Item",
-  152: "SLA",
-  153: "SLA Item",
-  154: "Convert Rule",
-  155: "Convert Rule Item",
-  161: "Mobile Offline Profile",
-  162: "Mobile Offline Profile Item",
-  165: "Similarity Rule",
-  166: "Data Source Mapping",
-  201: "SDKMessage",
-  202: "SDKMessageFilter",
-  203: "SdkMessagePair",
-  204: "SdkMessageRequest",
-  205: "SdkMessageRequestField",
-  206: "SdkMessageResponse",
-  207: "SdkMessageResponseField",
-  210: "WebWizard",
-  300: "Canvas App",
-  371: "Connector",
-  372: "Connector",
-  380: "Environment Variable Definition",
-  381: "Environment Variable Value",
-  400: "AI Project Type",
-  401: "AI Project",
-  402: "AI Configuration",
-  430: "Entity Analytics Configuration",
-  431: "Attribute Image Configuration",
-  432: "Entity Image Configuration"
-};
 
 export class DataverseClient {
   private httpClient: AxiosInstance;
@@ -142,7 +42,10 @@ export class DataverseClient {
     });
   }
 
-  static async getTokenWithClientCredentials(
+  /**
+   * Authenticate using a client secret (Service Principal scheme).
+   */
+  static async getTokenWithClientSecret(
     tenantId: string,
     clientId: string,
     clientSecret: string,
@@ -165,19 +68,25 @@ export class DataverseClient {
     return response.data.access_token;
   }
 
-  static async getTokenWithUsernamePassword(
-    username: string,
-    password: string,
+  /**
+   * Authenticate using a workload identity federation OIDC token (client_assertion flow).
+   * The OIDC token is obtained from Azure DevOps by calling the OIDC request endpoint.
+   */
+  static async getTokenWithFederatedCredential(
+    tenantId: string,
+    clientId: string,
+    oidcToken: string,
     environmentUrl: string
   ): Promise<string> {
     const resource = environmentUrl.replace(/\/$/, "");
-    const tokenUrl = `https://login.microsoftonline.com/common/oauth2/token`;
+    const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/token`;
 
     const body = qs.stringify({
-      grant_type: "password",
-      client_id: "51f81489-12ee-4a9e-aaae-a2591f45987d", // Well-known public client ID for Dataverse
-      username: username,
-      password: password,
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      client_id: clientId,
+      client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+      client_assertion: oidcToken,
+      use: "sig",
       resource: resource
     });
 
@@ -188,6 +97,31 @@ export class DataverseClient {
     return response.data.access_token;
   }
 
+  /**
+   * Request an OIDC token from Azure DevOps for a given service connection.
+   * Required for Workload Identity Federation auth scheme.
+   */
+  static async getOidcTokenFromAzureDevOps(
+    serviceConnectionId: string,
+    oidcRequestUri: string,
+    systemAccessToken: string
+  ): Promise<string> {
+    const url = `${oidcRequestUri}?api-version=7.1&serviceConnectionId=${encodeURIComponent(serviceConnectionId)}`;
+
+    const response = await axios.post<{ oidcToken: string }>(
+      url,
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${systemAccessToken}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    return response.data.oidcToken;
+  }
+
   async validateSolutionExists(solutionUniqueName: string): Promise<boolean> {
     const response = await this.httpClient.get<{ value: unknown[] }>(
       `/solutions?$filter=uniquename eq '${encodeURIComponent(solutionUniqueName)}'&$select=uniquename,friendlyname,version`
@@ -195,81 +129,27 @@ export class DataverseClient {
     return response.data.value.length > 0;
   }
 
-  async getSolutionComponents(solutionUniqueName: string): Promise<SolutionComponent[]> {
-    const allComponents: SolutionComponent[] = [];
-    let nextLink: string | undefined = `/solutioncomponents?$filter=solution_solutioncomponent/uniquename eq '${encodeURIComponent(solutionUniqueName)}'&$select=objectid,componenttype,solutioncomponentid`;
-
-    while (nextLink) {
-      const response = await this.httpClient.get<{
-        value: SolutionComponent[];
-        "@odata.nextLink"?: string;
-      }>(nextLink);
-
-      allComponents.push(...response.data.value);
-      nextLink = response.data["@odata.nextLink"];
-
-      // Strip base URL from nextLink if present
-      if (nextLink && nextLink.startsWith(this.environmentUrl)) {
-        nextLink = nextLink.substring(`${this.environmentUrl}/api/data/v9.2`.length);
-      }
-    }
-
-    return allComponents;
-  }
-
   async getUnmanagedLayersForSolution(solutionUniqueName: string): Promise<UnmanagedLayerResult[]> {
-    // Query msdyn_componentlayers to find all layers for components in this solution
-    // An unmanaged layer has solutionname = 'Active' or is not associated with any managed solution
-    const allLayers: ComponentLayer[] = [];
-    let nextLink: string | undefined =
+    // Step 1: get all component IDs that belong to the solution via msdyn_componentlayers
+    const solutionLayers = await this.fetchAllPages<ComponentLayer>(
       `/msdyn_componentlayers?$filter=msdyn_solutionname eq '${encodeURIComponent(solutionUniqueName)}'` +
-      `&$select=msdyn_componentlayerid,msdyn_solutionname,msdyn_name,msdyn_componentid,msdyn_order,msdyn_solutioncomponentname` +
-      `&$orderby=msdyn_name asc`;
+        `&$select=msdyn_componentid,msdyn_name,msdyn_solutioncomponentname`
+    );
 
-    while (nextLink) {
-      const response = await this.httpClient.get<{
-        value: ComponentLayer[];
-        "@odata.nextLink"?: string;
-      }>(nextLink);
+    const solutionComponentIds = [...new Set(solutionLayers.map(l => l.msdyn_componentid))];
 
-      allLayers.push(...response.data.value);
-      nextLink = response.data["@odata.nextLink"];
-
-      if (nextLink && nextLink.startsWith(this.environmentUrl)) {
-        nextLink = nextLink.substring(`${this.environmentUrl}/api/data/v9.2`.length);
-      }
-    }
-
-    // Find component IDs that belong to our solution
-    const solutionComponentIds = new Set(allLayers.map(l => l.msdyn_componentid));
-
-    // Now check for each component whether there is an unmanaged ('Active') layer on top
+    // Step 2: for each component, retrieve all layers ordered top-first and check if the top is 'Active'
     const unmanagedResults: UnmanagedLayerResult[] = [];
 
     for (const componentId of solutionComponentIds) {
-      // Get ALL layers for this component, ordered by layer order (ascending = bottom layer first)
-      let layersForComponent: ComponentLayer[] = [];
-      let layerLink: string | undefined =
+      const componentLayers = await this.fetchAllPages<ComponentLayer>(
         `/msdyn_componentlayers?$filter=msdyn_componentid eq '${encodeURIComponent(componentId)}'` +
-        `&$select=msdyn_componentlayerid,msdyn_solutionname,msdyn_name,msdyn_componentid,msdyn_order,msdyn_solutioncomponentname` +
-        `&$orderby=msdyn_order desc`;
+          `&$select=msdyn_componentlayerid,msdyn_solutionname,msdyn_name,msdyn_componentid,msdyn_order,msdyn_solutioncomponentname` +
+          `&$orderby=msdyn_order desc`
+      );
 
-      while (layerLink) {
-        const resp = await this.httpClient.get<{
-          value: ComponentLayer[];
-          "@odata.nextLink"?: string;
-        }>(layerLink);
-
-        layersForComponent.push(...resp.data.value);
-        layerLink = resp.data["@odata.nextLink"];
-
-        if (layerLink && layerLink.startsWith(this.environmentUrl)) {
-          layerLink = layerLink.substring(`${this.environmentUrl}/api/data/v9.2`.length);
-        }
-      }
-
-      // The top layer (highest order = lowest number in Dataverse, order 0 = topmost) with solutionname 'Active' is an unmanaged layer
-      const topLayer = layersForComponent[0]; // already sorted desc by msdyn_order
+      // msdyn_order desc → first entry is the topmost layer
+      const topLayer = componentLayers[0];
       if (topLayer && topLayer.msdyn_solutionname.toLowerCase() === "active") {
         unmanagedResults.push({
           componentId: topLayer.msdyn_componentid,
@@ -282,5 +162,26 @@ export class DataverseClient {
     }
 
     return unmanagedResults;
+  }
+
+  private async fetchAllPages<T>(initialPath: string): Promise<T[]> {
+    const results: T[] = [];
+    let nextLink: string | undefined = initialPath;
+
+    while (nextLink) {
+      const response = await this.httpClient.get<{
+        value: T[];
+        "@odata.nextLink"?: string;
+      }>(nextLink);
+
+      results.push(...response.data.value);
+      nextLink = response.data["@odata.nextLink"];
+
+      if (nextLink?.startsWith(this.environmentUrl)) {
+        nextLink = nextLink.substring(`${this.environmentUrl}/api/data/v9.2`.length);
+      }
+    }
+
+    return results;
   }
 }
