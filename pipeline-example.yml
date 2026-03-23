@@ -1,0 +1,57 @@
+# Example Azure DevOps pipeline using the Check Unmanaged Layers task.
+#
+# The task uses a Power Platform service connection (PowerPlatformSPN) —
+# the same connection type used by PowerPlatformExportSolution and other
+# Microsoft Power Platform Build Tools tasks.
+
+parameters:
+  - name: SourceEnvironment
+    displayName: 'Power Platform Service Connection'
+    type: string
+  - name: SolutionName
+    displayName: 'Solution Unique Name'
+    type: string
+
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: QualityGate
+    displayName: 'Quality Gate'
+    jobs:
+      - job: CheckUnmanagedLayers
+        displayName: 'Check for Unmanaged Dataverse Layers'
+        # Required when using Workload Identity Federation (no client secret).
+        # Not needed when the service connection uses a client secret.
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        steps:
+          - task: CheckUnmanagedLayers@1
+            displayName: 'Check Unmanaged Layers'
+            inputs:
+              authenticationType: 'PowerPlatformSPN'
+              PowerPlatformSPN: '${{ parameters.SourceEnvironment }}'
+              SolutionName: '${{ parameters.SolutionName }}'
+              failOnUnmanagedLayers: true
+              outputFormat: 'table'
+
+          # The task sets the output variable UnmanagedLayerCount.
+          # Reference it in downstream steps like this:
+          - script: |
+              echo "Unmanaged layer count: $(UnmanagedLayerCount)"
+            displayName: 'Show Unmanaged Layer Count'
+            condition: always()
+
+  - stage: Deploy
+    displayName: 'Deploy Solution'
+    dependsOn: QualityGate
+    condition: succeeded()
+    jobs:
+      - job: Deploy
+        displayName: 'Deploy to Target Environment'
+        steps:
+          - script: echo "Deploying solution..."
+            displayName: 'Deploy'

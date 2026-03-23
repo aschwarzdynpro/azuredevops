@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.vsix
+CheckUnmanagedLayers/*.js
+CheckUnmanagedLayers/*.js.map
+CheckUnmanagedLayers/node_modules/
+images/

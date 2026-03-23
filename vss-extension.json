@@ -1,0 +1,48 @@
+{
+  "manifestVersion": 1,
+  "id": "dataverse-unmanaged-layer-check",
+  "name": "Dataverse Unmanaged Layer Check",
+  "version": "1.0.0",
+  "publisher": "aschwarzdynpro",
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "description": "Checks for unmanaged layers on Dataverse solution components to ensure clean solution management.",
+  "categories": [
+    "Azure Pipelines"
+  ],
+  "keywords": [
+    "Dataverse",
+    "Power Platform",
+    "Dynamics 365",
+    "Solution",
+    "Unmanaged Layer",
+    "ALM"
+  ],
+  "icons": {
+    "default": "images/extension-icon.png"
+  },
+  "files": [
+    {
+      "path": "CheckUnmanagedLayers"
+    },
+    {
+      "path": "images",
+      "addressable": true
+    }
+  ],
+  "contributions": [
+    {
+      "id": "check-unmanaged-layers-task",
+      "type": "ms.vss-distributed-task.task",
+      "targets": [
+        "ms.vss-distributed-task.tasks"
+      ],
+      "properties": {
+        "name": "CheckUnmanagedLayers"
+      }
+    }
+  ]
+}

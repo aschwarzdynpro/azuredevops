@@ -1,0 +1,95 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "CheckUnmanagedLayers",
+  "friendlyName": "Check Dataverse Unmanaged Layers",
+  "description": "Checks for unmanaged layers on components of a managed Dataverse solution. Fails the pipeline if unmanaged customizations are detected.",
+  "helpMarkDown": "This task queries the Dataverse Web API to detect unmanaged layers on solution components. Unmanaged layers indicate customizations made outside of solution management that can cause issues during deployments.",
+  "category": "Deploy",
+  "visibility": [
+    "Build",
+    "Release"
+  ],
+  "author": "aschwarzdynpro",
+  "version": {
+    "Major": 1,
+    "Minor": 0,
+    "Patch": 0
+  },
+  "instanceNameFormat": "Check Unmanaged Layers: $(SolutionName)",
+  "groups": [
+    {
+      "name": "solution",
+      "displayName": "Solution",
+      "isExpanded": true
+    },
+    {
+      "name": "behavior",
+      "displayName": "Behavior",
+      "isExpanded": false
+    }
+  ],
+  "inputs": [
+    {
+      "name": "authenticationType",
+      "type": "pickList",
+      "label": "Authentication type",
+      "defaultValue": "PowerPlatformSPN",
+      "required": true,
+      "helpMarkDown": "Select the authentication type.",
+      "options": {
+        "PowerPlatformSPN": "Service Principal/client secret (support for MFA)"
+      }
+    },
+    {
+      "name": "PowerPlatformSPN",
+      "type": "connectedService:PowerPlatform",
+      "label": "Service Connection",
+      "required": true,
+      "visibleRule": "authenticationType = PowerPlatformSPN",
+      "helpMarkDown": "Select a Power Platform service connection that points to the target Dataverse environment. The service connection must use either a client secret or workload identity federation."
+    },
+    {
+      "name": "SolutionName",
+      "type": "string",
+      "label": "Solution Unique Name",
+      "defaultValue": "",
+      "groupName": "solution",
+      "required": true,
+      "helpMarkDown": "The unique name of the Dataverse solution to check for unmanaged layers (e.g. MyCompanySolution)."
+    },
+    {
+      "name": "failOnUnmanagedLayers",
+      "type": "boolean",
+      "label": "Fail pipeline if unmanaged layers are found",
+      "defaultValue": "true",
+      "groupName": "behavior",
+      "required": false,
+      "helpMarkDown": "If enabled, the pipeline task will fail when unmanaged layers are detected. If disabled, only a warning is shown."
+    },
+    {
+      "name": "outputFormat",
+      "type": "pickList",
+      "label": "Output Format",
+      "defaultValue": "table",
+      "groupName": "behavior",
+      "required": false,
+      "helpMarkDown": "How the results should be displayed in the pipeline output.",
+      "options": {
+        "table": "Table",
+        "json": "JSON"
+      }
+    }
+  ],
+  "outputVariables": [
+    {
+      "name": "UnmanagedLayerCount",
+      "description": "The number of solution components that have an unmanaged (Active) layer on top."
+    }
+  ],
+  "execution": {
+    "Node16": {
+      "target": "index.js"
+    }
+  }
+}
