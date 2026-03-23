@@ -1,0 +1,16 @@
+{
+  "name": "dataverse-unmanaged-layer-check-extension",
+  "version": "1.0.0",
+  "description": "Azure DevOps Extension to detect unmanaged Dataverse layers",
+  "private": true,
+  "scripts": {
+    "install:task": "cd CheckUnmanagedLayers && npm install",
+    "build:task": "cd CheckUnmanagedLayers && npx tsc",
+    "build": "npm run install:task && npm run build:task",
+    "package": "npx tfx-cli extension create --manifest-globs vss-extension.json",
+    "package:dev": "npx tfx-cli extension create --manifest-globs vss-extension.json --output-path ./dist"
+  },
+  "devDependencies": {
+    "tfx-cli": "^0.17.0"
+  }
+}

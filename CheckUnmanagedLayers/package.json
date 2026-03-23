@@ -1,0 +1,23 @@
+{
+  "name": "check-unmanaged-layers",
+  "version": "1.0.0",
+  "description": "Azure DevOps task to check for unmanaged layers in Dataverse solutions",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rimraf dist *.js *.js.map",
+    "lint": "eslint src/**/*.ts",
+    "test": "mocha --require ts-node/register tests/**/*.ts"
+  },
+  "dependencies": {
+    "azure-pipelines-task-lib": "^4.0.0",
+    "axios": "^1.6.0",
+    "qs": "^6.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/qs": "^6.9.10",
+    "typescript": "^5.3.0",
+    "rimraf": "^5.0.0"
+  }
+}

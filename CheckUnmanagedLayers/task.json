@@ -1,0 +1,149 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "CheckUnmanagedLayers",
+  "friendlyName": "Check Dataverse Unmanaged Layers",
+  "description": "Checks for unmanaged layers on components of a managed Dataverse solution. Fails the pipeline if unmanaged customizations are detected.",
+  "helpMarkDown": "This task queries the Dataverse Web API to detect unmanaged layers on solution components. Unmanaged layers indicate customizations made outside of solution management that can cause issues during deployments.",
+  "category": "Deploy",
+  "visibility": [
+    "Build",
+    "Release"
+  ],
+  "author": "aschwarzdynpro",
+  "version": {
+    "Major": 1,
+    "Minor": 0,
+    "Patch": 0
+  },
+  "instanceNameFormat": "Check Unmanaged Layers: $(solutionUniqueName)",
+  "groups": [
+    {
+      "name": "connection",
+      "displayName": "Dataverse Connection",
+      "isExpanded": true
+    },
+    {
+      "name": "solution",
+      "displayName": "Solution",
+      "isExpanded": true
+    },
+    {
+      "name": "behavior",
+      "displayName": "Behavior",
+      "isExpanded": false
+    }
+  ],
+  "inputs": [
+    {
+      "name": "authenticationType",
+      "type": "pickList",
+      "label": "Authentication Type",
+      "defaultValue": "ServicePrincipal",
+      "groupName": "connection",
+      "required": true,
+      "helpMarkDown": "Select the authentication method for connecting to Dataverse.",
+      "options": {
+        "ServicePrincipal": "Service Principal (Client ID / Client Secret)",
+        "UsernamePassword": "Username / Password"
+      }
+    },
+    {
+      "name": "dataverseUrl",
+      "type": "string",
+      "label": "Dataverse Environment URL",
+      "defaultValue": "",
+      "groupName": "connection",
+      "required": true,
+      "helpMarkDown": "The URL of the Dataverse environment (e.g. https://yourorg.crm.dynamics.com)."
+    },
+    {
+      "name": "tenantId",
+      "type": "string",
+      "label": "Tenant ID",
+      "defaultValue": "",
+      "groupName": "connection",
+      "required": true,
+      "visibleRule": "authenticationType = ServicePrincipal",
+      "helpMarkDown": "The Azure AD Tenant ID."
+    },
+    {
+      "name": "clientId",
+      "type": "string",
+      "label": "Client ID (Application ID)",
+      "defaultValue": "",
+      "groupName": "connection",
+      "required": true,
+      "visibleRule": "authenticationType = ServicePrincipal",
+      "helpMarkDown": "The Azure AD Application (Client) ID registered for Dataverse access."
+    },
+    {
+      "name": "clientSecret",
+      "type": "string",
+      "label": "Client Secret",
+      "defaultValue": "",
+      "groupName": "connection",
+      "required": true,
+      "visibleRule": "authenticationType = ServicePrincipal",
+      "helpMarkDown": "The client secret for the Azure AD application.",
+      "isConfidential": true
+    },
+    {
+      "name": "username",
+      "type": "string",
+      "label": "Username",
+      "defaultValue": "",
+      "groupName": "connection",
+      "required": true,
+      "visibleRule": "authenticationType = UsernamePassword",
+      "helpMarkDown": "The Dataverse user account (e.g. user@yourorg.onmicrosoft.com)."
+    },
+    {
+      "name": "password",
+      "type": "string",
+      "label": "Password",
+      "defaultValue": "",
+      "groupName": "connection",
+      "required": true,
+      "visibleRule": "authenticationType = UsernamePassword",
+      "helpMarkDown": "The password for the Dataverse user account.",
+      "isConfidential": true
+    },
+    {
+      "name": "solutionUniqueName",
+      "type": "string",
+      "label": "Solution Unique Name",
+      "defaultValue": "",
+      "groupName": "solution",
+      "required": true,
+      "helpMarkDown": "The unique name of the Dataverse solution to check for unmanaged layers (e.g. MyCompanySolution)."
+    },
+    {
+      "name": "failOnUnmanagedLayers",
+      "type": "boolean",
+      "label": "Fail pipeline if unmanaged layers are found",
+      "defaultValue": "true",
+      "groupName": "behavior",
+      "required": false,
+      "helpMarkDown": "If enabled, the pipeline task will fail when unmanaged layers are detected. If disabled, only a warning is shown."
+    },
+    {
+      "name": "outputFormat",
+      "type": "pickList",
+      "label": "Output Format",
+      "defaultValue": "table",
+      "groupName": "behavior",
+      "required": false,
+      "helpMarkDown": "How the results should be displayed in the pipeline output.",
+      "options": {
+        "table": "Table",
+        "json": "JSON"
+      }
+    }
+  ],
+  "execution": {
+    "Node16": {
+      "target": "index.js"
+    }
+  }
+}

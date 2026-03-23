@@ -1,0 +1,65 @@
+# Example Azure DevOps pipeline using the Check Unmanaged Layers task
+#
+# This pipeline checks a Dataverse solution for unmanaged layers before deploying.
+# Add this step to your deployment pipeline to gate releases.
+
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # Override via pipeline variables or variable groups for security
+  dataverseUrl: 'https://yourorg.crm.dynamics.com'
+  solutionUniqueName: 'YourSolutionUniqueName'
+
+stages:
+  - stage: QualityGate
+    displayName: 'Quality Gate'
+    jobs:
+      - job: CheckUnmanagedLayers
+        displayName: 'Check for Unmanaged Dataverse Layers'
+        steps:
+
+          # Option A: Service Principal authentication
+          - task: CheckUnmanagedLayers@1
+            displayName: 'Check Unmanaged Layers (Service Principal)'
+            inputs:
+              authenticationType: 'ServicePrincipal'
+              dataverseUrl: '$(dataverseUrl)'
+              tenantId: '$(TENANT_ID)'
+              clientId: '$(CLIENT_ID)'
+              clientSecret: '$(CLIENT_SECRET)'
+              solutionUniqueName: '$(solutionUniqueName)'
+              failOnUnmanagedLayers: true
+              outputFormat: 'table'
+
+          # Option B: Username/Password authentication
+          # - task: CheckUnmanagedLayers@1
+          #   displayName: 'Check Unmanaged Layers (User/Password)'
+          #   inputs:
+          #     authenticationType: 'UsernamePassword'
+          #     dataverseUrl: '$(dataverseUrl)'
+          #     username: '$(DATAVERSE_USERNAME)'
+          #     password: '$(DATAVERSE_PASSWORD)'
+          #     solutionUniqueName: '$(solutionUniqueName)'
+          #     failOnUnmanagedLayers: true
+          #     outputFormat: 'table'
+
+          # Use the output variable in subsequent steps
+          - script: |
+              echo "Unmanaged layer count: $(UnmanagedLayerCount)"
+            displayName: 'Show Unmanaged Layer Count'
+            condition: always()
+
+  - stage: Deploy
+    displayName: 'Deploy Solution'
+    dependsOn: QualityGate
+    condition: succeeded()
+    jobs:
+      - job: Deploy
+        displayName: 'Deploy to Target Environment'
+        steps:
+          - script: echo "Deploying solution..."
+            displayName: 'Deploy'
