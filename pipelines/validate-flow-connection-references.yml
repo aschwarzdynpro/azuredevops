@@ -20,7 +20,6 @@ variables:
   #   TenantId     - Azure AD Tenant ID
   #   ClientId     - App Registration Client ID
   #   ClientSecret - App Registration Client Secret (secret)
-  #   GitHubPAT    - GitHub Personal Access Token with repo/issues scope (secret)
   - group: 'DataverseServicePrincipal'
 
 pool:
@@ -48,11 +47,10 @@ stages:
                 -ClientSecret "$(ClientSecret)"
                 -SolutionName "${{ parameters.SolutionName }}"
                 -DeploymentSettingsPath "$(Build.SourcesDirectory)/${{ parameters.DeploymentSettingsPath }}"
-                -GitHubToken "$(GitHubPAT)"
-                -GitHubRepo "$(Build.Repository.Name)"
               pwsh: true
               failOnStderr: false
             env:
               # Secret variables must be explicitly mapped to env
               CLIENTSECRET: $(ClientSecret)
-              GITHUBPAT: $(GitHubPAT)
+              # System.AccessToken is used by the script to create Work Items
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)

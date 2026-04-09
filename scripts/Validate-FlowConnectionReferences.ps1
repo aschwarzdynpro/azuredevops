@@ -8,9 +8,9 @@
     specified unmanaged solution, extracts their connection references, and
     validates each one is listed in the repository's DeploymentSettings.json.
 
-    If missing connection references are found, a GitHub issue is created with
-    the affected flows and their owners, and the script exits with code 1
-    to fail the pipeline.
+    If missing connection references are found, an Azure DevOps Work Item is
+    created with the affected flows and their owners, and the script exits
+    with code 1 to fail the pipeline.
 #>
 
 [CmdletBinding()]
@@ -21,8 +21,10 @@ param(
     [Parameter(Mandatory)][string]$ClientSecret,
     [Parameter(Mandatory)][string]$SolutionName,
     [Parameter(Mandatory)][string]$DeploymentSettingsPath,
-    [Parameter(Mandatory)][string]$GitHubToken,
-    [Parameter(Mandatory)][string]$GitHubRepo
+    [string]$AzureDevOpsToken = $env:SYSTEM_ACCESSTOKEN,
+    [string]$OrganizationUrl = $env:SYSTEM_TEAMFOUNDATIONCOLLECTIONURI,
+    [string]$ProjectName = $env:SYSTEM_TEAMPROJECT,
+    [string]$WorkItemType = "Issue"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,30 +101,39 @@ function Invoke-DataverseSingleQuery {
     return Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
 }
 
-function New-GitHubIssue {
+function New-AzureDevOpsWorkItem {
     param(
         [string]$Token,
-        [string]$Repo,
+        [string]$OrganizationUrl,
+        [string]$ProjectName,
+        [string]$WorkItemType,
         [string]$Title,
-        [string]$Body,
-        [string[]]$Labels
+        [string]$Description,
+        [string[]]$Tags
     )
 
+    $orgUrl = $OrganizationUrl.TrimEnd('/')
+    $encodedProject = [Uri]::EscapeDataString($ProjectName)
+    $encodedType = [Uri]::EscapeDataString($WorkItemType)
+    $uri = "$orgUrl/$encodedProject/_apis/wit/workitems/`$$($encodedType)?api-version=7.1"
+
     $headers = @{
-        Authorization          = "Bearer $Token"
-        Accept                 = "application/vnd.github+json"
-        "X-GitHub-Api-Version" = "2022-11-28"
+        Authorization  = "Bearer $Token"
+        "Content-Type" = "application/json-patch+json"
     }
 
-    $payload = @{
-        title  = $Title
-        body   = $Body
-        labels = $Labels
-    } | ConvertTo-Json -Depth 5
+    $body = @(
+        @{ op = "add"; path = "/fields/System.Title"; value = $Title }
+        @{ op = "add"; path = "/fields/System.Description"; value = $Description }
+    )
 
-    $uri = "https://api.github.com/repos/$Repo/issues"
-    return Invoke-RestMethod -Uri $uri -Headers $headers -Method Post `
-        -Body $payload -ContentType "application/json; charset=utf-8"
+    if ($Tags -and $Tags.Count -gt 0) {
+        $body += @{ op = "add"; path = "/fields/System.Tags"; value = ($Tags -join "; ") }
+    }
+
+    $jsonBody = ConvertTo-Json -InputObject $body -Depth 10
+    return Invoke-RestMethod -Uri $uri -Headers $headers -Method Patch `
+        -Body ([System.Text.Encoding]::UTF8.GetBytes($jsonBody)) -ContentType "application/json-patch+json; charset=utf-8"
 }
 
 #endregion
@@ -287,98 +298,110 @@ if ($flowViolations.Count -eq 0) {
     exit 0
 }
 
-# --- Step 7: Validation failed - create GitHub Issue ---
+# --- Step 7: Validation failed - create Azure DevOps Work Item ---
 Write-Host "=============================================="
 Write-Host " VALIDATION FAILED" -ForegroundColor Red
 Write-Host " $($flowViolations.Count) flow(s) with missing connection references"
 Write-Host "=============================================="
 Write-Host ""
 
-# Build pipeline link for the issue body
+# Build pipeline link for the work item description
 $buildLink = ""
 $pipelineUrl = $env:SYSTEM_TEAMFOUNDATIONCOLLECTIONURI
 $pipelineProject = $env:SYSTEM_TEAMPROJECT
 $buildId = $env:BUILD_BUILDID
 if ($pipelineUrl -and $pipelineProject -and $buildId) {
     $encodedProject = [Uri]::EscapeDataString($pipelineProject)
-    $buildLink = "`n**Pipeline Run:** [$pipelineProject Build #$buildId]($($pipelineUrl)$encodedProject/_build/results?buildId=$buildId)"
+    $buildLink = "<br><b>Pipeline Run:</b> <a href=`"$($pipelineUrl)$encodedProject/_build/results?buildId=$buildId`">$pipelineProject Build #$buildId</a>"
 }
 
-# Build the markdown table rows
+# Build HTML table rows
 $tableRows = ""
 foreach ($v in $flowViolations) {
     $missingList = ($v.MissingConnRefs | ForEach-Object {
-        "``$($_.LogicalName)`` ($($_.ConnectorId))"
+        "<code>$($_.LogicalName)</code> ($($_.ConnectorId))"
     }) -join "<br>"
-    $tableRows += "| $($v.FlowName) | $($v.OwnerName) | $missingList |`n"
+    $tableRows += "<tr><td>$($v.FlowName)</td><td>$($v.OwnerName)</td><td>$missingList</td></tr>`n"
 }
 
-# Build the list of currently configured refs
-$configuredList = if ($configuredConnRefs.Count -gt 0) {
-    ($configuredConnRefs | ForEach-Object { "- ``$_``" }) -join "`n"
+# Build list of currently configured refs
+$configuredListHtml = if ($configuredConnRefs.Count -gt 0) {
+    "<ul>" + (($configuredConnRefs | ForEach-Object { "<li><code>$_</code></li>" }) -join "") + "</ul>"
 }
 else {
-    "_None configured._"
+    "<em>None configured.</em>"
 }
 
-$issueBody = @"
-## Connection Reference Validation Failed
+$description = @"
+<h2>Connection Reference Validation Failed</h2>
+<p>
+<b>Solution:</b> <code>$SolutionName</code><br>
+<b>Environment:</b> <code>$EnvironmentUrl</code><br>
+<b>Date:</b> $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC' -AsUTC)$buildLink
+</p>
+<p>The following Cloud Flows use connection references that are <b>not configured</b> in <code>DeploymentSettings.json</code>.<br>
+Deployment cannot proceed until all connection references are registered.</p>
 
-**Solution:** ``$SolutionName``
-**Environment:** ``$EnvironmentUrl``
-**Date:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC' -AsUTC)$buildLink
+<h3>Affected Flows</h3>
+<table>
+<tr><th>Flow</th><th>Owner</th><th>Missing Connection References</th></tr>
+$tableRows</table>
 
-The following Cloud Flows use connection references that are **not configured** in ``DeploymentSettings.json``.
-Deployment cannot proceed until all connection references are registered.
+<h3>Required Actions</h3>
+<ol>
+<li>Open <code>$DeploymentSettingsPath</code> in the repository</li>
+<li>Add the missing connection references to the <code>ConnectionReferences</code> array:
+<pre><code>{
+  "LogicalName": "&lt;logical-name-from-above&gt;",
+  "ConnectionId": "&lt;guid-of-target-connection&gt;",
+  "ConnectorId": "&lt;connector-id-from-above&gt;"
+}</code></pre></li>
+<li>Commit and push the changes</li>
+<li>Re-run the validation pipeline</li>
+</ol>
 
-### Affected Flows
-
-| Flow | Owner | Missing Connection References |
-|------|-------|-------------------------------|
-$tableRows
-### Required Actions
-
-1. Open ``$DeploymentSettingsPath`` in the repository
-2. Add the missing connection references to the ``ConnectionReferences`` array:
-   ``````json
-   {
-     "LogicalName": "<logical-name-from-above>",
-     "ConnectionId": "<guid-of-target-connection>",
-     "ConnectorId": "<connector-id-from-above>"
-   }
-   ``````
-3. Commit and push the changes
-4. Re-run the validation pipeline
-
-### Currently Configured Connection References
-
-$configuredList
+<h3>Currently Configured Connection References</h3>
+$configuredListHtml
 "@
 
 $issueTitle = "Pipeline Failed: Missing Connection References in Solution '$SolutionName'"
 
-Write-Host ">> Creating GitHub Issue in $GitHubRepo..."
-try {
-    $issue = New-GitHubIssue `
-        -Token $GitHubToken `
-        -Repo $GitHubRepo `
-        -Title $issueTitle `
-        -Body $issueBody `
-        -Labels @("pipeline-failure", "connection-reference")
+Write-Host ">> Creating Azure DevOps Work Item..."
 
-    Write-Host "   Issue created: $($issue.html_url)"
-    Write-Host "##vso[task.logissue type=error]Connection reference validation failed. See GitHub Issue: $($issue.html_url)"
+if (-not $AzureDevOpsToken) {
+    Write-Warning "   No Azure DevOps access token available. Cannot create Work Item."
+    Write-Host "##vso[task.logissue type=warning]Set 'Allow scripts to access the OAuth token' in the pipeline or provide SYSTEM_ACCESSTOKEN."
 }
-catch {
-    Write-Warning "   Failed to create GitHub Issue: $_"
-    Write-Host "##vso[task.logissue type=warning]Could not create GitHub Issue. Check GitHubToken permissions."
+elseif (-not $OrganizationUrl -or -not $ProjectName) {
+    Write-Warning "   Organization URL or Project Name not available. Cannot create Work Item."
+}
+else {
+    try {
+        $workItem = New-AzureDevOpsWorkItem `
+            -Token $AzureDevOpsToken `
+            -OrganizationUrl $OrganizationUrl `
+            -ProjectName $ProjectName `
+            -WorkItemType $WorkItemType `
+            -Title $issueTitle `
+            -Description $description `
+            -Tags @("pipeline-failure", "connection-reference")
 
-    # Log the violation details directly to pipeline output as fallback
-    Write-Host "##vso[task.logissue type=error]Connection reference validation failed for solution '$SolutionName'."
-    foreach ($v in $flowViolations) {
-        $missing = ($v.MissingConnRefs | ForEach-Object { $_.LogicalName }) -join ", "
-        Write-Host "##vso[task.logissue type=error]Flow '$($v.FlowName)' (Owner: $($v.OwnerName)) - Missing: $missing"
+        $workItemId = $workItem.id
+        $workItemUrl = $workItem._links.html.href
+        Write-Host "   Work Item created: #$workItemId - $workItemUrl"
+        Write-Host "##vso[task.logissue type=error]Connection reference validation failed. See Work Item #$workItemId : $workItemUrl"
     }
+    catch {
+        Write-Warning "   Failed to create Work Item: $_"
+        Write-Host "##vso[task.logissue type=warning]Could not create Work Item. Check pipeline OAuth token permissions."
+    }
+}
+
+# Always log violation details to pipeline output
+Write-Host "##vso[task.logissue type=error]Connection reference validation failed for solution '$SolutionName'."
+foreach ($v in $flowViolations) {
+    $missing = ($v.MissingConnRefs | ForEach-Object { $_.LogicalName }) -join ", "
+    Write-Host "##vso[task.logissue type=error]Flow '$($v.FlowName)' (Owner: $($v.OwnerName)) - Missing: $missing"
 }
 
 Write-Host ""
