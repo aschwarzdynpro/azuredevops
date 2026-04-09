@@ -1,0 +1,58 @@
+trigger: none
+
+parameters:
+  - name: EnvironmentUrl
+    displayName: 'Dataverse Environment URL'
+    type: string
+    default: 'https://yourorg.crm.dynamics.com'
+
+  - name: SolutionName
+    displayName: 'Solution Unique Name'
+    type: string
+
+  - name: DeploymentSettingsPath
+    displayName: 'Path to DeploymentSettings.json (relative to repo root)'
+    type: string
+    default: 'config/DeploymentSettings.json'
+
+variables:
+  # Variable group must contain:
+  #   TenantId     - Azure AD Tenant ID
+  #   ClientId     - App Registration Client ID
+  #   ClientSecret - App Registration Client Secret (secret)
+  #   GitHubPAT    - GitHub Personal Access Token with repo/issues scope (secret)
+  - group: 'DataverseServicePrincipal'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: ValidateConnectionReferences
+    displayName: 'Validate Flow Connection References'
+    jobs:
+      - job: Validate
+        displayName: 'Check flows in unmanaged solution'
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - task: PowerShell@2
+            displayName: 'Validate Connection References'
+            inputs:
+              targetType: 'filePath'
+              filePath: '$(Build.SourcesDirectory)/scripts/Validate-FlowConnectionReferences.ps1'
+              arguments: >-
+                -EnvironmentUrl "${{ parameters.EnvironmentUrl }}"
+                -TenantId "$(TenantId)"
+                -ClientId "$(ClientId)"
+                -ClientSecret "$(ClientSecret)"
+                -SolutionName "${{ parameters.SolutionName }}"
+                -DeploymentSettingsPath "$(Build.SourcesDirectory)/${{ parameters.DeploymentSettingsPath }}"
+                -GitHubToken "$(GitHubPAT)"
+                -GitHubRepo "$(Build.Repository.Name)"
+              pwsh: true
+              failOnStderr: false
+            env:
+              # Secret variables must be explicitly mapped to env
+              CLIENTSECRET: $(ClientSecret)
+              GITHUBPAT: $(GitHubPAT)
